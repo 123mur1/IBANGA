@@ -1,0 +1,30 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# Next.js
+frontend/.next/
+frontend/out/
+
+# Nest / build
+backend/dist/
+backend/coverage/
+*.tsbuildinfo
+
+# env and secrets
+.env
+.env.*
+!.env.example
+
+# local npm TLS workaround
+.npmrc
+
+# logs and OS
+*.log
+.DS_Store
+Thumbs.db
+
+# Prisma generated (keep schema, ignore engines if any)
+backend/prisma/*.db
+backend/prisma/*.db-journal
