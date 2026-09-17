@@ -5,12 +5,12 @@ import { FormEvent, useState } from "react";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Field, inputClass, PrimaryButton } from "@/components/ui";
-import { TruckPhotos, readImageFile } from "@/components/photos";
+import { PhotoUploader } from "@/components/photos";
 import { useIbanga } from "@/lib/store";
 import { TRUCK_TYPES } from "@/lib/types";
 
 export default function NewTruckPage() {
-  const { currentUser, addTruck } = useIbanga();
+  const { addTruck } = useIbanga();
   const router = useRouter();
   const [form, setForm] = useState({
     plateNumber: "",
@@ -19,19 +19,34 @@ export default function NewTruckPage() {
     currentLocation: "",
     preferredRoute: "",
     description: "",
-    photos: [] as string[],
   });
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  async function addPhoto(file: File | undefined) {
-    if (!file || form.photos.length >= 2) return;
-    const src = await readImageFile(file);
-    setForm({ ...form, photos: [...form.photos, src] });
-  }
-
-  function onSubmit(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!currentUser) return;
-    addTruck({ ...form, ownerId: currentUser.id });
+    const capacity = Number(form.capacity);
+    if (!capacity || capacity <= 0) {
+      setError("Enter a valid capacity in tons.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    const err = await addTruck({
+      plateNumber: form.plateNumber,
+      truckType: form.truckType,
+      capacity,
+      currentLocation: form.currentLocation,
+      preferredRoute: form.preferredRoute,
+      description: form.description,
+      photos,
+    });
+    setSaving(false);
+    if (err) {
+      setError(err);
+      return;
+    }
     router.push("/dashboard/owner/trucks");
   }
 
@@ -61,13 +76,16 @@ export default function NewTruckPage() {
               ))}
             </select>
           </Field>
-          <Field label="Capacity">
+          <Field label="Capacity (tons)">
             <input
               className={inputClass}
+              type="number"
+              min="0.1"
+              step="0.1"
               required
               value={form.capacity}
               onChange={(e) => setForm({ ...form, capacity: e.target.value })}
-              placeholder="28 tons"
+              placeholder="28"
             />
           </Field>
           <Field label="Current location">
@@ -99,23 +117,13 @@ export default function NewTruckPage() {
               }
             />
           </Field>
-          <Field label="Photos (1 or 2)">
-            <input
-              className="text-sm"
-              type="file"
-              accept="image/*"
-              onChange={(e) => addPhoto(e.target.files?.[0])}
-            />
-            <p className="mt-1 text-xs text-muted">
-              Add one, then another if you want. Demo stores them in this browser.
-            </p>
-            {form.photos.length ? (
-              <div className="mt-3">
-                <TruckPhotos photos={form.photos} alt="New truck" className="h-28" />
-              </div>
-            ) : null}
+          <Field label="Photos (optional)">
+            <PhotoUploader photos={photos} onChange={setPhotos} />
           </Field>
-          <PrimaryButton type="submit">Save truck</PrimaryButton>
+          {error ? <p className="text-sm text-bad">{error}</p> : null}
+          <PrimaryButton type="submit" disabled={saving}>
+            {saving ? "Saving…" : "Save truck"}
+          </PrimaryButton>
         </form>
       </DashboardShell>
     </RequireAuth>

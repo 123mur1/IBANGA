@@ -275,7 +275,7 @@ export function LandingPage() {
               href="/login"
               className="rounded-xl bg-white/10 px-5 py-3 text-sm font-semibold"
             >
-              Use a demo account
+              Log in
             </Link>
           </div>
         </div>

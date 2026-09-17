@@ -2,20 +2,28 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, Suspense, useState } from "react";
+import { FormEvent, Suspense, useEffect, useState } from "react";
 import { BrandLink } from "@/components/brand";
 import { RequireAuth } from "@/components/require-auth";
 import { PayNotice } from "@/components/status-badge";
 import { Field, inputClass, PrimaryButton } from "@/components/ui";
 import { useIbanga } from "@/lib/store";
+import type { Truck } from "@/lib/types";
 
 function BookingForm() {
   const params = useSearchParams();
   const truckId = params.get("truck") ?? "";
   const router = useRouter();
-  const { trucks, currentUser, createBooking } = useIbanga();
-  const truck = trucks.find((t) => t.id === truckId);
+  const { currentUser, createBooking, fetchTruck } = useIbanga();
+  const [truck, setTruck] = useState<Truck | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!truckId) return;
+    fetchTruck(truckId)
+      .then(setTruck)
+      .catch(() => setTruck(null));
+  }, [truckId, fetchTruck]);
   const [form, setForm] = useState({
     cargoType: "",
     cargoDescription: "",
@@ -30,7 +38,7 @@ function BookingForm() {
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!currentUser || !truck) return;
-    const err = createBooking({
+    const err = createBooking(truck, {
       ...form,
       truckId: truck.id,
       importerId: currentUser.id,

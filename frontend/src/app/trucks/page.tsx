@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { BrandLink } from "@/components/brand";
 import { TruckCard } from "@/components/truck-card";
 import { Field, inputClass } from "@/components/ui";
@@ -9,32 +9,23 @@ import { useIbanga } from "@/lib/store";
 import { LOCATIONS, TRUCK_TYPES } from "@/lib/types";
 
 export default function TrucksPage() {
-  const { trucks, users, currentUser } = useIbanga();
+  const { trucks, trucksLoading, currentUser, refreshTrucks } = useIbanga();
   const [location, setLocation] = useState("");
   const [type, setType] = useState("");
   const [route, setRoute] = useState("");
-  const [capacity, setCapacity] = useState("");
+  const [minCapacity, setMinCapacity] = useState("");
 
-  const results = useMemo(() => {
-    return trucks.filter((t) => {
-      if (t.status !== "AVAILABLE") return false;
-      if (location && t.currentLocation !== location) return false;
-      if (type && t.truckType !== type) return false;
-      if (
-        route &&
-        !t.preferredRoute.toLowerCase().includes(route.toLowerCase())
-      ) {
-        return false;
-      }
-      if (
-        capacity &&
-        !t.capacity.toLowerCase().includes(capacity.toLowerCase())
-      ) {
-        return false;
-      }
-      return true;
+  useEffect(() => {
+    refreshTrucks({
+      location: location || undefined,
+      truckType: type || undefined,
+      route: route || undefined,
+      minCapacity: minCapacity ? Number(minCapacity) : undefined,
     });
-  }, [trucks, location, type, route, capacity]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location, type, route, minCapacity]);
+
+  const results = trucks;
 
   return (
     <div className="min-h-screen bg-background">
@@ -90,24 +81,24 @@ export default function TrucksPage() {
               placeholder="Mombasa"
             />
           </Field>
-          <Field label="Capacity contains">
+          <Field label="Minimum capacity (tons)">
             <input
               className={inputClass}
-              value={capacity}
-              onChange={(e) => setCapacity(e.target.value)}
-              placeholder="28 tons"
+              type="number"
+              min="0"
+              value={minCapacity}
+              onChange={(e) => setMinCapacity(e.target.value)}
+              placeholder="10"
             />
           </Field>
         </div>
 
-        <p className="mt-6 text-sm text-muted">{results.length} trucks</p>
+        <p className="mt-6 text-sm text-muted">
+          {trucksLoading ? "Loading…" : `${results.length} trucks`}
+        </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {results.map((truck) => (
-            <TruckCard
-              key={truck.id}
-              truck={truck}
-              owner={users.find((u) => u.id === truck.ownerId)}
-            />
+            <TruckCard key={truck.id} truck={truck} />
           ))}
         </div>
       </main>

@@ -1,4 +1,4 @@
-import type { Booking, Dispute, Truck, User } from "./types";
+import type { Booking, Dispute, User } from "./types";
 
 export const seedUsers: User[] = [
   {
@@ -55,87 +55,6 @@ export const seedUsers: User[] = [
     active: true,
     company: "iBanga",
     photo: "/photos/ibanga-admin-claire.png",
-  },
-];
-
-export const seedTrucks: Truck[] = [
-  {
-    id: "t1",
-    ownerId: "u-owner",
-    plateNumber: "RAD 452 C",
-    truckType: "Container",
-    capacity: "28 tons",
-    currentLocation: "Kigali",
-    preferredRoute: "Kigali — Mombasa",
-    description:
-      "40ft container truck, regularly runs the Northern Corridor. Good for general imported goods.",
-    status: "UNAVAILABLE",
-    photos: [
-      "/photos/ibanga-container-highway.png",
-      "/photos/ibanga-container-yard.png",
-    ],
-  },
-  {
-    id: "t2",
-    ownerId: "u-owner",
-    plateNumber: "RAD 118 B",
-    truckType: "Refrigerated",
-    capacity: "18 tons",
-    currentLocation: "Musanze",
-    preferredRoute: "Kigali — Kampala",
-    description:
-      "Cold-chain truck for produce and pharmaceuticals. Temperature logs available on request.",
-    status: "UNAVAILABLE",
-    photos: ["/photos/ibanga-reefer.png"],
-  },
-  {
-    id: "t3",
-    ownerId: "u-owner-2",
-    plateNumber: "KCD 903 A",
-    truckType: "Flatbed",
-    capacity: "30 tons",
-    currentLocation: "Mombasa",
-    preferredRoute: "Mombasa — Kigali",
-    description:
-      "Flatbed with chains and tarpaulin. Ideal for machinery, steel, and oversized crates.",
-    status: "AVAILABLE",
-    photos: ["/photos/ibanga-flatbed.png", "/photos/ibanga-container-yard.png"],
-  },
-  {
-    id: "t4",
-    ownerId: "u-owner-2",
-    plateNumber: "KCA 220 T",
-    truckType: "Tanker",
-    capacity: "32,000 L",
-    currentLocation: "Nairobi",
-    preferredRoute: "Nairobi — Kigali",
-    description: "Fuel and liquid cargo tanker. Certified hoses and valves.",
-    status: "UNAVAILABLE",
-    photos: ["/photos/ibanga-tanker.png"],
-  },
-  {
-    id: "t5",
-    ownerId: "u-owner",
-    plateNumber: "RAE 671 D",
-    truckType: "Box truck",
-    capacity: "8 tons",
-    currentLocation: "Kigali",
-    preferredRoute: "Kigali — Rusumo",
-    description: "Covered box truck for packaged goods and last-mile from the border.",
-    status: "UNAVAILABLE",
-    photos: ["/photos/ibanga-box.png"],
-  },
-  {
-    id: "t6",
-    ownerId: "u-owner-2",
-    plateNumber: "KBB 441 M",
-    truckType: "Semi-trailer",
-    capacity: "34 tons",
-    currentLocation: "Dar es Salaam",
-    preferredRoute: "Dar es Salaam — Kigali",
-    description: "Long-haul semi for containerized imports from the port.",
-    status: "AVAILABLE",
-    photos: ["/photos/ibanga-semi.png", "/photos/ibanga-container-highway.png"],
   },
 ];
 

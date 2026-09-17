@@ -5,17 +5,15 @@ import { FormEvent, useEffect, useState } from "react";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Field, inputClass, PrimaryButton } from "@/components/ui";
-import { TruckPhotos, readImageFile } from "@/components/photos";
+import { PhotoUploader } from "@/components/photos";
 import { useIbanga } from "@/lib/store";
-import { TRUCK_TYPES } from "@/lib/types";
+import { TRUCK_TYPES, type Truck } from "@/lib/types";
 
 export default function EditTruckPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { currentUser, trucks, updateTruck } = useIbanga();
-  const truck = trucks.find(
-    (t) => t.id === id && t.ownerId === currentUser?.id,
-  );
+  const { currentUser, fetchTruck, updateTruck } = useIbanga();
+  const [truck, setTruck] = useState<Truck | null | undefined>(undefined);
   const [form, setForm] = useState({
     plateNumber: "",
     truckType: "Container",
@@ -23,31 +21,55 @@ export default function EditTruckPage() {
     currentLocation: "",
     preferredRoute: "",
     description: "",
-    photos: [] as string[],
   });
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!truck) return;
-    setForm({
-      plateNumber: truck.plateNumber,
-      truckType: truck.truckType,
-      capacity: truck.capacity,
-      currentLocation: truck.currentLocation,
-      preferredRoute: truck.preferredRoute,
-      description: truck.description,
-      photos: truck.photos ?? [],
-    });
-  }, [truck]);
+    fetchTruck(id)
+      .then((t) => {
+        if (t.ownerId !== currentUser?.id) {
+          setTruck(null);
+          return;
+        }
+        setTruck(t);
+        setForm({
+          plateNumber: t.plateNumber,
+          truckType: t.truckType,
+          capacity: String(t.capacity),
+          currentLocation: t.currentLocation,
+          preferredRoute: t.preferredRoute,
+          description: t.description,
+        });
+        setPhotos(t.photos ?? []);
+      })
+      .catch(() => setTruck(null));
+  }, [id, currentUser?.id, fetchTruck]);
 
-  async function addPhoto(file: File | undefined) {
-    if (!file) return;
-    const src = await readImageFile(file);
-    setForm((f) => ({ ...f, photos: [...f.photos.slice(0, 1), src].slice(0, 2) }));
-  }
-
-  function onSubmit(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    updateTruck(id, form);
+    const capacity = Number(form.capacity);
+    if (!capacity || capacity <= 0) {
+      setError("Enter a valid capacity in tons.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    const err = await updateTruck(id, {
+      plateNumber: form.plateNumber,
+      truckType: form.truckType,
+      capacity,
+      currentLocation: form.currentLocation,
+      preferredRoute: form.preferredRoute,
+      description: form.description,
+      photos,
+    });
+    setSaving(false);
+    if (err) {
+      setError(err);
+      return;
+    }
     router.push("/dashboard/owner/trucks");
   }
 
@@ -55,7 +77,9 @@ export default function EditTruckPage() {
     <RequireAuth role="TRUCK_OWNER">
       <DashboardShell role="TRUCK_OWNER">
         <h1 className="font-display text-3xl text-navy">Edit truck</h1>
-        {!truck ? (
+        {truck === undefined ? (
+          <p className="mt-4 text-muted">Loading…</p>
+        ) : !truck ? (
           <p className="mt-4">Truck not found.</p>
         ) : (
           <form onSubmit={onSubmit} className="mt-6 max-w-xl space-y-4">
@@ -82,9 +106,12 @@ export default function EditTruckPage() {
                 ))}
               </select>
             </Field>
-            <Field label="Capacity">
+            <Field label="Capacity (tons)">
               <input
                 className={inputClass}
+                type="number"
+                min="0.1"
+                step="0.1"
                 required
                 value={form.capacity}
                 onChange={(e) => setForm({ ...form, capacity: e.target.value })}
@@ -119,20 +146,13 @@ export default function EditTruckPage() {
                 }
               />
             </Field>
-            <Field label="Photos (1 or 2)">
-              <input
-                className="text-sm"
-                type="file"
-                accept="image/*"
-                onChange={(e) => addPhoto(e.target.files?.[0])}
-              />
-              {form.photos.length ? (
-                <div className="mt-3">
-                  <TruckPhotos photos={form.photos} alt={form.plateNumber} className="h-28" />
-                </div>
-              ) : null}
+            <Field label="Photos (optional)">
+              <PhotoUploader photos={photos} onChange={setPhotos} />
             </Field>
-            <PrimaryButton type="submit">Update truck</PrimaryButton>
+            {error ? <p className="text-sm text-bad">{error}</p> : null}
+            <PrimaryButton type="submit" disabled={saving}>
+              {saving ? "Saving…" : "Update truck"}
+            </PrimaryButton>
           </form>
         )}
       </DashboardShell>

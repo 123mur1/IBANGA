@@ -1,16 +1,35 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { TruckBadge } from "@/components/status-badge";
-import { TruckPhotos } from "@/components/photos";
+import { TruckThumb } from "@/components/photos";
 import { EmptyState, GhostButton } from "@/components/ui";
 import { useIbanga } from "@/lib/store";
 
 export default function OwnerTrucksPage() {
-  const { currentUser, trucks, deleteTruck, setAvailability } = useIbanga();
-  const mine = trucks.filter((t) => t.ownerId === currentUser?.id);
+  const { currentUser, trucks, trucksLoading, refreshTrucks, deleteTruck, setAvailability } =
+    useIbanga();
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (currentUser) refreshTrucks({ mine: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id]);
+
+  async function onDelete(id: string) {
+    setError(null);
+    const err = await deleteTruck(id);
+    if (err) setError(err);
+  }
+
+  async function onToggleAvailability(id: string, status: "AVAILABLE" | "UNAVAILABLE") {
+    setError(null);
+    const err = await setAvailability(id, status === "AVAILABLE" ? "UNAVAILABLE" : "AVAILABLE");
+    if (err) setError(err);
+  }
 
   return (
     <RequireAuth role="TRUCK_OWNER">
@@ -29,57 +48,55 @@ export default function OwnerTrucksPage() {
             Add truck
           </Link>
         </div>
+        {error ? <p className="mt-4 text-sm text-bad">{error}</p> : null}
         <div className="mt-6 space-y-3">
-          {mine.length ? (
-            mine.map((truck) => (
+          {trucksLoading ? (
+            <p className="text-muted">Loading…</p>
+          ) : trucks.length ? (
+            trucks.map((truck) => (
               <div
                 key={truck.id}
-                className="rounded-2xl border border-line bg-card p-5"
+                className="flex flex-col gap-4 rounded-2xl border border-line bg-card p-5 sm:flex-row"
               >
-                <TruckPhotos
+                <TruckThumb
                   photos={truck.photos}
                   alt={truck.plateNumber}
-                  className="h-32"
+                  className="aspect-4/3 sm:w-48 sm:shrink-0"
                 />
-                <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="font-display text-xl text-navy">
-                      {truck.plateNumber}
-                    </p>
-                    <p className="text-sm text-muted">
-                      {truck.truckType} · {truck.capacity} · {truck.currentLocation}
-                    </p>
-                    <p className="mt-1 text-sm">{truck.preferredRoute}</p>
+                <div className="flex flex-1 flex-col">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-display text-xl text-navy">
+                        {truck.plateNumber}
+                      </p>
+                      <p className="text-sm text-muted">
+                        {truck.truckType} · {truck.capacity} tons · {truck.currentLocation}
+                      </p>
+                      <p className="mt-1 text-sm">{truck.preferredRoute}</p>
+                    </div>
+                    <TruckBadge status={truck.status} />
                   </div>
-                  <TruckBadge status={truck.status} />
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Link
-                    href={`/dashboard/owner/trucks/${truck.id}/edit`}
-                    className="rounded-xl border border-line px-3 py-2 text-sm font-semibold"
-                  >
-                    Edit
-                  </Link>
-                  <GhostButton
-                    type="button"
-                    onClick={() =>
-                      setAvailability(
-                        truck.id,
-                        truck.status === "AVAILABLE"
-                          ? "UNAVAILABLE"
-                          : "AVAILABLE",
-                      )
-                    }
-                  >
-                    Mark{" "}
-                    {truck.status === "AVAILABLE" ? "unavailable" : "available"}
-                  </GhostButton>
-                  <GhostButton
-                    type="button"
-                    onClick={() => deleteTruck(truck.id)}
-                  >
-                    Delete
-                  </GhostButton>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Link
+                      href={`/dashboard/owner/trucks/${truck.id}/edit`}
+                      className="rounded-xl border border-line px-3 py-2 text-sm font-semibold"
+                    >
+                      Edit
+                    </Link>
+                    <GhostButton
+                      type="button"
+                      onClick={() => onToggleAvailability(truck.id, truck.status)}
+                    >
+                      Mark{" "}
+                      {truck.status === "AVAILABLE" ? "unavailable" : "available"}
+                    </GhostButton>
+                    <GhostButton
+                      type="button"
+                      onClick={() => onDelete(truck.id)}
+                    >
+                      Delete
+                    </GhostButton>
+                  </div>
                 </div>
               </div>
             ))

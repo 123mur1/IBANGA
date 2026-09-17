@@ -60,7 +60,7 @@ model Truck {
   currentLocation String?
   preferredRoute  String?
   description     String?
-  photo           String?
+  photos          String[]    @default([])
   status          TruckStatus @default(AVAILABLE)
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt

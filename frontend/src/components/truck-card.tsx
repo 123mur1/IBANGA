@@ -1,18 +1,13 @@
 import Link from "next/link";
 import { TruckBadge } from "./status-badge";
-import { Avatar, TruckPhotos } from "./photos";
-import type { Truck, User } from "@/lib/types";
+import { Avatar, TruckThumb } from "./photos";
+import type { Truck } from "@/lib/types";
 
-export function TruckCard({
-  truck,
-  owner,
-}: {
-  truck: Truck;
-  owner?: User;
-}) {
+export function TruckCard({ truck }: { truck: Truck }) {
+  const owner = truck.owner;
   return (
     <article className="flex flex-col overflow-hidden rounded-2xl border border-line bg-card">
-      <TruckPhotos photos={truck.photos} alt={truck.plateNumber} className="h-40" />
+      <TruckThumb photos={truck.photos} alt={truck.plateNumber} />
       <div className="flex flex-1 flex-col p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -24,7 +19,7 @@ export function TruckCard({
       <dl className="mt-4 space-y-1.5 text-sm">
         <div className="flex justify-between gap-4">
           <dt className="text-muted">Capacity</dt>
-          <dd className="font-medium text-navy">{truck.capacity}</dd>
+          <dd className="font-medium text-navy">{truck.capacity} tons</dd>
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-muted">Now in</dt>
@@ -40,7 +35,7 @@ export function TruckCard({
           <div className="flex items-center justify-between gap-3">
             <dt className="text-muted">Owner</dt>
             <dd className="flex items-center gap-2 font-medium text-navy">
-              <Avatar src={owner.photo} name={owner.name} size="sm" />
+              <Avatar name={owner.name} size="sm" />
               {owner.name}
             </dd>
           </div>

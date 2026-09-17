@@ -22,17 +22,26 @@ export type User = {
   photo?: string;
 };
 
+export type TruckOwnerContact = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  location: string | null;
+};
+
 export type Truck = {
   id: string;
   ownerId: string;
   plateNumber: string;
   truckType: string;
-  capacity: string;
+  capacity: number;
   currentLocation: string;
   preferredRoute: string;
   description: string;
   status: TruckStatus;
   photos: string[];
+  owner?: TruckOwnerContact;
 };
 
 export type Booking = {

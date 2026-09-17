@@ -8,7 +8,8 @@ import {
   useMemo,
   useState,
 } from "react";
-import { seedBookings, seedDisputes, seedTrucks, seedUsers } from "./mock-data";
+import { api, getToken, setToken } from "./api";
+import { seedBookings, seedDisputes, seedUsers } from "./mock-data";
 import {
   ACTIVE_BOOKING_STATUSES,
   type Booking,
@@ -24,35 +25,94 @@ const STORAGE_KEY = "ibanga-mvp-v3";
 
 type State = {
   users: User[];
-  trucks: Truck[];
   bookings: Booking[];
   disputes: Dispute[];
   currentUserId: string | null;
 };
 
 type NewBookingInput = Omit<Booking, "id" | "status" | "createdAt">;
-type NewTruckInput = Omit<Truck, "id" | "status"> & { status?: TruckStatus };
+
+export type TruckSearchParams = {
+  mine?: boolean;
+  location?: string;
+  truckType?: string;
+  route?: string;
+  minCapacity?: number;
+};
+
+export type NewTruckInput = {
+  plateNumber: string;
+  truckType: string;
+  capacity: number;
+  currentLocation?: string;
+  preferredRoute?: string;
+  description?: string;
+  photos?: string[];
+};
+
+function buildTruckQuery(params?: TruckSearchParams) {
+  if (!params) return "";
+  const search = new URLSearchParams();
+  if (params.mine) search.set("mine", "true");
+  if (params.location) search.set("location", params.location);
+  if (params.truckType) search.set("truckType", params.truckType);
+  if (params.route) search.set("route", params.route);
+  if (params.minCapacity) search.set("minCapacity", String(params.minCapacity));
+  const qs = search.toString();
+  return qs ? `?${qs}` : "";
+}
+
+type AuthPayload = {
+  token: string;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    phone: string | null;
+    role: Role;
+    location: string | null;
+  };
+};
+
+function toUser(u: AuthPayload["user"]): User {
+  return {
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    phone: u.phone ?? "",
+    role: u.role,
+    location: u.location ?? "",
+    active: true,
+  };
+}
 
 type Store = State & {
   ready: boolean;
   currentUser: User | null;
-  login: (email: string) => string | null;
-  loginAs: (userId: string) => void;
+  login: (email: string, password: string) => Promise<string | null>;
   register: (input: {
     name: string;
     email: string;
     phone: string;
     location: string;
     company: string;
+    password: string;
     role: Exclude<Role, "ADMIN">;
-  }) => string | null;
+  }) => Promise<string | null>;
   logout: () => void;
   updateProfile: (patch: Partial<Pick<User, "name" | "phone" | "location" | "company" | "photo">>) => void;
-  addTruck: (input: NewTruckInput) => string;
-  updateTruck: (id: string, patch: Partial<Omit<Truck, "id" | "ownerId">>) => string | null;
-  deleteTruck: (id: string) => string | null;
-  setAvailability: (id: string, status: TruckStatus) => string | null;
-  createBooking: (input: NewBookingInput) => string | null;
+  trucks: Truck[];
+  trucksLoading: boolean;
+  refreshTrucks: (params?: TruckSearchParams) => Promise<string | null>;
+  fetchTruck: (id: string) => Promise<Truck>;
+  addTruck: (input: NewTruckInput) => Promise<string | null>;
+  updateTruck: (
+    id: string,
+    patch: Partial<Omit<Truck, "id" | "ownerId" | "owner" | "status">>,
+  ) => Promise<string | null>;
+  deleteTruck: (id: string) => Promise<string | null>;
+  setAvailability: (id: string, status: TruckStatus) => Promise<string | null>;
+  createBooking: (truck: Truck, input: NewBookingInput) => string | null;
   setAgreedPrice: (id: string, price: string) => string | null;
   setBookingStatus: (id: string, status: BookingStatus) => string | null;
   reportProblem: (bookingId: string, reason: string) => string | null;
@@ -70,7 +130,6 @@ function uid(prefix: string) {
 function seed(): State {
   return {
     users: seedUsers,
-    trucks: seedTrucks,
     bookings: seedBookings,
     disputes: seedDisputes,
     currentUserId: null,
@@ -88,6 +147,9 @@ function hasActiveTrip(bookings: Booking[], truckId: string, exceptId?: string) 
 
 export function IbangaProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<State>(seed);
+  const [trucks, setTrucks] = useState<Truck[]>([]);
+  const [trucksLoading, setTrucksLoading] = useState(false);
+  const [authUser, setAuthUser] = useState<User | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -97,7 +159,17 @@ export function IbangaProvider({ children }: { children: React.ReactNode }) {
     } catch {
       /* keep seed */
     }
-    setReady(true);
+
+    const token = getToken();
+    if (!token) {
+      setReady(true);
+      return;
+    }
+
+    api<AuthPayload["user"]>("/auth/me")
+      .then((user) => setAuthUser(toUser(user)))
+      .catch(() => setToken(null))
+      .finally(() => setReady(true));
   }, []);
 
   useEffect(() => {
@@ -105,107 +177,126 @@ export function IbangaProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state, ready]);
 
-  const currentUser =
-    state.users.find((u) => u.id === state.currentUserId && u.active) ?? null;
+  const currentUser = authUser;
 
-  const login = useCallback((email: string) => {
-    const user = state.users.find(
-      (u) => u.email.toLowerCase() === email.toLowerCase(),
-    );
-    if (!user) return "No account found for that email.";
-    if (!user.active) return "This account is suspended. Contact iBanga admin.";
-    setState((s) => ({ ...s, currentUserId: user.id }));
-    return null;
-  }, [state.users]);
-
-  const loginAs = useCallback((userId: string) => {
-    setState((s) => ({ ...s, currentUserId: userId }));
+  const login = useCallback(async (email: string, password: string) => {
+    try {
+      const data = await api<AuthPayload>("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email, password }),
+      });
+      setToken(data.token);
+      setAuthUser(toUser(data.user));
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : "Login failed.";
+    }
   }, []);
 
-  const register = useCallback<Store["register"]>((input) => {
-    if (state.users.some((u) => u.email.toLowerCase() === input.email.toLowerCase())) {
-      return "That email is already registered.";
+  const register = useCallback<Store["register"]>(async (input) => {
+    try {
+      const data = await api<AuthPayload>("/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
+          name: input.name,
+          email: input.email,
+          password: input.password,
+          phone: input.phone,
+          location: input.location,
+          role: input.role,
+        }),
+      });
+      setToken(data.token);
+      setAuthUser(toUser(data.user));
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : "Registration failed.";
     }
-    const user: User = {
-      id: uid("u"),
-      name: input.name,
-      email: input.email,
-      phone: input.phone,
-      role: input.role,
-      location: input.location,
-      company: input.company,
-      active: true,
-    };
-    setState((s) => ({
-      ...s,
-      users: [...s.users, user],
-      currentUserId: user.id,
-    }));
-    return null;
-  }, [state.users]);
+  }, []);
 
   const logout = useCallback(() => {
-    setState((s) => ({ ...s, currentUserId: null }));
+    setToken(null);
+    setAuthUser(null);
   }, []);
 
   const updateProfile = useCallback<Store["updateProfile"]>((patch) => {
+    setAuthUser((u) => (u ? { ...u, ...patch } : u));
     setState((s) => ({
       ...s,
-      users: s.users.map((u) =>
-        u.id === s.currentUserId ? { ...u, ...patch } : u,
+      users: s.users.map((user) =>
+        user.id === (authUser?.id ?? s.currentUserId) ? { ...user, ...patch } : user,
       ),
     }));
+  }, [authUser?.id]);
+
+  const refreshTrucks = useCallback<Store["refreshTrucks"]>(async (params) => {
+    setTrucksLoading(true);
+    try {
+      const data = await api<Truck[]>(`/trucks${buildTruckQuery(params)}`);
+      setTrucks(data);
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : "Could not load trucks.";
+    } finally {
+      setTrucksLoading(false);
+    }
   }, []);
 
-  const addTruck = useCallback<Store["addTruck"]>((input) => {
-    const id = uid("t");
-    const truck: Truck = {
-      ...input,
-      id,
-      status: input.status ?? "AVAILABLE",
-      photos: (input.photos ?? []).slice(0, 2),
-    };
-    setState((s) => ({ ...s, trucks: [...s.trucks, truck] }));
-    return id;
+  const fetchTruck = useCallback<Store["fetchTruck"]>(
+    (id) => api<Truck>(`/trucks/${id}`),
+    [],
+  );
+
+  const addTruck = useCallback<Store["addTruck"]>(async (input) => {
+    try {
+      const truck = await api<Truck>("/trucks", {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+      setTrucks((prev) => [truck, ...prev]);
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : "Could not add truck.";
+    }
   }, []);
 
-  const updateTruck = useCallback<Store["updateTruck"]>((id, patch) => {
-    const truck = state.trucks.find((t) => t.id === id);
-    if (!truck) return "Truck not found.";
-    if (currentUser?.role === "TRUCK_OWNER" && truck.ownerId !== currentUser.id) {
-      return "You can only edit your own trucks.";
+  const updateTruck = useCallback<Store["updateTruck"]>(async (id, patch) => {
+    try {
+      const truck = await api<Truck>(`/trucks/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      });
+      setTrucks((prev) => prev.map((t) => (t.id === id ? truck : t)));
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : "Could not update truck.";
     }
-    setState((s) => ({
-      ...s,
-      trucks: s.trucks.map((t) => (t.id === id ? { ...t, ...patch } : t)),
-    }));
-    return null;
-  }, [currentUser, state.trucks]);
+  }, []);
 
-  const deleteTruck = useCallback<Store["deleteTruck"]>((id) => {
-    const truck = state.trucks.find((t) => t.id === id);
-    if (!truck) return "Truck not found.";
-    if (hasActiveTrip(state.bookings, id)) {
-      return "Cannot delete a truck with an active trip.";
+  const deleteTruck = useCallback<Store["deleteTruck"]>(async (id) => {
+    try {
+      await api(`/trucks/${id}`, { method: "DELETE" });
+      setTrucks((prev) => prev.filter((t) => t.id !== id));
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : "Could not delete truck.";
     }
-    setState((s) => ({ ...s, trucks: s.trucks.filter((t) => t.id !== id) }));
-    return null;
-  }, [state.bookings, state.trucks]);
+  }, []);
 
-  const setAvailability = useCallback<Store["setAvailability"]>((id, status) => {
-    if (status === "AVAILABLE" && hasActiveTrip(state.bookings, id)) {
-      return "This truck has an active trip. It becomes available only after the importer confirms receipt, or after admin resolves a dispute.";
+  const setAvailability = useCallback<Store["setAvailability"]>(async (id, status) => {
+    try {
+      const truck = await api<Truck>(`/trucks/${id}/availability`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      setTrucks((prev) => prev.map((t) => (t.id === id ? truck : t)));
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : "Could not update availability.";
     }
-    setState((s) => ({
-      ...s,
-      trucks: s.trucks.map((t) => (t.id === id ? { ...t, status } : t)),
-    }));
-    return null;
-  }, [state.bookings]);
+  }, []);
 
-  const createBooking = useCallback<Store["createBooking"]>((input) => {
-    const truck = state.trucks.find((t) => t.id === input.truckId);
-    if (!truck) return "Truck not found.";
+  const createBooking = useCallback<Store["createBooking"]>((truck, input) => {
     if (truck.status !== "AVAILABLE") return "This truck is not available to book.";
     if (hasActiveTrip(state.bookings, truck.id)) {
       return "This truck already has an active booking.";
@@ -217,15 +308,12 @@ export function IbangaProvider({ children }: { children: React.ReactNode }) {
       status: "PENDING",
       createdAt: new Date().toISOString(),
     };
-    setState((s) => ({
-      ...s,
-      bookings: [booking, ...s.bookings],
-      trucks: s.trucks.map((t) =>
-        t.id === truck.id ? { ...t, status: "UNAVAILABLE" } : t,
-      ),
-    }));
+    setState((s) => ({ ...s, bookings: [booking, ...s.bookings] }));
+    setTrucks((prev) =>
+      prev.map((t) => (t.id === truck.id ? { ...t, status: "UNAVAILABLE" } : t)),
+    );
     return null;
-  }, [state.bookings, state.trucks]);
+  }, [state.bookings]);
 
   const setAgreedPrice = useCallback((id: string, price: string) => {
     const booking = state.bookings.find((b) => b.id === id);
@@ -249,27 +337,20 @@ export function IbangaProvider({ children }: { children: React.ReactNode }) {
       return "Agree a price first, then accept or reject.";
     }
 
-    setState((s) => {
-      let trucks = s.trucks;
-      let bookings = s.bookings.map((b) => (b.id === id ? { ...b, status } : b));
-
-      if (status === "ACCEPTED") {
-        trucks = trucks.map((t) =>
-          t.id === booking.truckId ? { ...t, status: "UNAVAILABLE" } : t,
-        );
-      }
-      if (status === "REJECTED") {
-        trucks = trucks.map((t) =>
-          t.id === booking.truckId ? { ...t, status: "AVAILABLE" } : t,
-        );
-      }
-      if (status === "COMPLETED") {
-        trucks = trucks.map((t) =>
-          t.id === booking.truckId ? { ...t, status: "AVAILABLE" } : t,
-        );
-      }
-      return { ...s, trucks, bookings };
-    });
+    setState((s) => ({
+      ...s,
+      bookings: s.bookings.map((b) => (b.id === id ? { ...b, status } : b)),
+    }));
+    if (status === "ACCEPTED") {
+      setTrucks((prev) =>
+        prev.map((t) => (t.id === booking.truckId ? { ...t, status: "UNAVAILABLE" } : t)),
+      );
+    }
+    if (status === "REJECTED" || status === "COMPLETED") {
+      setTrucks((prev) =>
+        prev.map((t) => (t.id === booking.truckId ? { ...t, status: "AVAILABLE" } : t)),
+      );
+    }
     return null;
   }, [state.bookings]);
 
@@ -291,10 +372,10 @@ export function IbangaProvider({ children }: { children: React.ReactNode }) {
       bookings: s.bookings.map((b) =>
         b.id === bookingId ? { ...b, status: "DISPUTED" } : b,
       ),
-      trucks: s.trucks.map((t) =>
-        t.id === booking.truckId ? { ...t, status: "UNAVAILABLE" } : t,
-      ),
     }));
+    setTrucks((prev) =>
+      prev.map((t) => (t.id === booking.truckId ? { ...t, status: "UNAVAILABLE" } : t)),
+    );
     return null;
   }, [state.bookings]);
 
@@ -317,10 +398,12 @@ export function IbangaProvider({ children }: { children: React.ReactNode }) {
       bookings: s.bookings.map((b) =>
         b.id === dispute.bookingId ? { ...b, status: "COMPLETED" } : b,
       ),
-      trucks: s.trucks.map((t) =>
-        booking && t.id === booking.truckId ? { ...t, status: "AVAILABLE" } : t,
-      ),
     }));
+    if (booking) {
+      setTrucks((prev) =>
+        prev.map((t) => (t.id === booking.truckId ? { ...t, status: "AVAILABLE" } : t)),
+      );
+    }
     return null;
   }, [state.bookings, state.disputes]);
 
@@ -343,10 +426,13 @@ export function IbangaProvider({ children }: { children: React.ReactNode }) {
       ready,
       currentUser,
       login,
-      loginAs,
       register,
       logout,
       updateProfile,
+      trucks,
+      trucksLoading,
+      refreshTrucks,
+      fetchTruck,
       addTruck,
       updateTruck,
       deleteTruck,
@@ -364,10 +450,13 @@ export function IbangaProvider({ children }: { children: React.ReactNode }) {
       ready,
       currentUser,
       login,
-      loginAs,
       register,
       logout,
       updateProfile,
+      trucks,
+      trucksLoading,
+      refreshTrucks,
+      fetchTruck,
       addTruck,
       updateTruck,
       deleteTruck,

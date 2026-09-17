@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { TruckBadge } from "@/components/status-badge";
@@ -8,8 +9,14 @@ import { StatCard } from "@/components/ui";
 import { useIbanga } from "@/lib/store";
 
 export default function OwnerDashboard() {
-  const { currentUser, trucks, bookings } = useIbanga();
-  const mine = trucks.filter((t) => t.ownerId === currentUser?.id);
+  const { currentUser, trucks, bookings, refreshTrucks } = useIbanga();
+  const mine = trucks;
+
+  useEffect(() => {
+    if (currentUser) refreshTrucks({ mine: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id]);
+
   const myBookings = bookings.filter((b) =>
     mine.some((t) => t.id === b.truckId),
   );

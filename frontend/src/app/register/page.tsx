@@ -21,11 +21,16 @@ function RegisterForm() {
     phone: "",
     location: "",
     company: "",
+    password: "",
   });
+  const [busy, setBusy] = useState(false);
 
-  function onSubmit(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    const err = register({ ...form, role });
+    setBusy(true);
+    setError(null);
+    const err = await register({ ...form, role });
+    setBusy(false);
     if (err) {
       setError(err);
       return;
@@ -103,9 +108,19 @@ function RegisterForm() {
             placeholder="Kigali"
           />
         </Field>
+        <Field label="Password">
+          <input
+            className={inputClass}
+            type="password"
+            required
+            minLength={6}
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+          />
+        </Field>
         {error ? <p className="text-sm text-bad">{error}</p> : null}
-        <PrimaryButton className="w-full" type="submit">
-          Register
+        <PrimaryButton className="w-full" type="submit" disabled={busy}>
+          {busy ? "Creating account…" : "Register"}
         </PrimaryButton>
       </form>
       <p className="mt-6 text-center text-sm text-muted">
